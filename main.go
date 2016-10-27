@@ -8,8 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os/exec"
-	"strconv"
-	"time"
 
 	"github.com/influxdata/influxdb/client/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,55 +25,33 @@ var (
 	influxURL      = flag.String("influxURL", "", "influxDB URL, disabled if empty")
 	influxDatabase = flag.String("influxDatabase", "", "influx Database name")
 
+	labels = []string{"model", "channel", "id"}
+
 	temperature = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "temperature_celsius",
+		Name: "sensor_temperature_celsius",
 		Help: "Current temperature in Celsius",
 	},
-		[]string{"model", "channel", "id"},
+		labels,
+	)
+
+	lowBattery = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "sensor_low_battery",
+		Help: "Battery is low",
+	},
+		labels,
 	)
 
 	humidity = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "humidity",
+		Name: "sensor_humidity",
 		Help: "Current Humidity",
 	},
-		[]string{"model", "channel", "id"},
+		labels,
 	)
 )
 
 func init() {
 	prometheus.MustRegister(temperature)
 	prometheus.MustRegister(humidity)
-}
-
-type DeviceMessage struct {
-	Model       string
-	Id          int
-	Channel     string
-	TempCelsius float64 `json:"temperature_C"`
-	Humidity    float64
-	Battery     string
-}
-
-func (msg *DeviceMessage) ToLabels() map[string]string {
-	m := make(map[string]string)
-	m["model"] = msg.Model
-	m["channel"] = msg.Channel
-	m["id"] = strconv.Itoa(msg.Id)
-	return m
-}
-
-func (msg *DeviceMessage) ToInfluxPoint() *client.Point {
-	fields := map[string]interface{}{
-		"temperature": msg.TempCelsius,
-		"humidity":    msg.Humidity,
-	}
-	pt, err := client.NewPoint("sensor", msg.ToLabels(), fields, time.Now())
-	if err != nil {
-		log.Println(err)
-		return nil
-	}
-
-	return pt
 }
 
 func main() {
@@ -127,6 +103,11 @@ func main() {
 		// Set values on prometheus gauges
 		temperature.With(prometheus.Labels(msg.ToLabels())).Set(msg.TempCelsius)
 		humidity.With(prometheus.Labels(msg.ToLabels())).Set(msg.Humidity)
+		low := 0.0
+		if msg.Battery == "LOW" {
+			low = 1.0
+		}
+		lowBattery.With(prometheus.Labels(msg.ToLabels())).Set(low)
 
 		if influxClient != nil {
 			bp.AddPoint(msg.ToInfluxPoint())
