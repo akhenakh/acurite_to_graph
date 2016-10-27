@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 
 	"github.com/influxdata/influxdb/client/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,24 +28,22 @@ var (
 	influxURL      = flag.String("influxURL", "", "influxDB URL, disabled if empty")
 	influxDatabase = flag.String("influxDatabase", "", "influx Database name")
 
-	labels = []string{"model", "channel", "id"}
-
 	temperature = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "sensor_temperature_celsius",
+		Name: "sensoracurite_temperature_celsius",
 		Help: "Current temperature in Celsius",
 	},
 		labels,
 	)
 
 	lowBattery = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "sensor_low_battery",
+		Name: "sensoracurite_low_battery",
 		Help: "Battery is low",
 	},
 		labels,
 	)
 
 	humidity = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "sensor_humidity",
+		Name: "sensoracurite_humidity",
 		Help: "Current Humidity",
 	},
 		labels,
@@ -55,7 +56,29 @@ func init() {
 }
 
 func main() {
+	// name device
+	var nameFieldsFlag fieldFlag
+	nameFields := make(map[int64]string)
+	flag.Var(&nameFieldsFlag, "nameFields", "List of id=name pairs (comma separated) to  be injected as a name label eg 1251=kitchen")
+
 	flag.Parse()
+
+	// parsing args for naming devices
+	for _, field := range nameFieldsFlag.Fields {
+		if len(strings.Split(field, "=")) != 2 {
+			fmt.Println("Invalid forceField", field)
+			flag.PrintDefaults()
+			os.Exit(2)
+		}
+		split := strings.Split(field, "=")
+		deviceID, err := strconv.ParseInt(split[0], 10, 64)
+		if err != nil {
+			fmt.Println("Invalid forceField shoud be an int", field)
+			flag.PrintDefaults()
+			os.Exit(2)
+		}
+		nameFields[deviceID] = split[1]
+	}
 
 	var influxClient client.Client
 	if *influxURL != "" {
@@ -100,6 +123,11 @@ func main() {
 			log.Println(err)
 			continue
 		}
+		// add names labels
+		if name, ok := nameFields[int64(msg.ID)]; ok {
+			msg.Name = name
+		}
+
 		// Set values on prometheus gauges
 		temperature.With(prometheus.Labels(msg.ToLabels())).Set(msg.TempCelsius)
 		humidity.With(prometheus.Labels(msg.ToLabels())).Set(msg.Humidity)

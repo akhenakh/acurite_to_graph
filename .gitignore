@@ -22,3 +22,11 @@ _testmain.go
 *.exe
 *.test
 *.prof
+_steps
+_projects
+_builds
+.wercker
+.vscode
+
+bin/
+acurite_to_graph

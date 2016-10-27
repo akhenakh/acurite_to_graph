@@ -8,6 +8,10 @@ import (
 	client "github.com/influxdata/influxdb/client/v2"
 )
 
+var (
+	labels = []string{"model", "channel", "id", "name"}
+)
+
 type DeviceMessage struct {
 	Model       string
 	ID          int
@@ -15,6 +19,7 @@ type DeviceMessage struct {
 	TempCelsius float64 `json:"temperature_C"`
 	Humidity    float64
 	Battery     string
+	Name        string
 }
 
 func (msg *DeviceMessage) ToLabels() map[string]string {
