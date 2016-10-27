@@ -44,6 +44,7 @@ var (
 
 func init() {
 	prometheus.MustRegister(temperature)
+	prometheus.MustRegister(humidity)
 }
 
 type DeviceMessage struct {
@@ -111,6 +112,12 @@ func main() {
 		Database:  *influxDatabase,
 		Precision: "s",
 	})
+
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		err = http.ListenAndServe(fmt.Sprintf(":%d", *httpPort), nil)
+		log.Println(err)
+	}()
 
 	for in.Scan() {
 		if err := json.Unmarshal([]byte(in.Text()), &msg); err != nil {
