@@ -27,6 +27,7 @@ func (msg *DeviceMessage) ToLabels() map[string]string {
 	m["model"] = msg.Model
 	m["channel"] = msg.Channel
 	m["id"] = strconv.Itoa(msg.ID)
+	m["name"] = msg.Name 
 	return m
 }
 
@@ -37,7 +38,7 @@ func (msg *DeviceMessage) ToInfluxPoint() *client.Point {
 		"low_battery": false,
 	}
 	if msg.Battery == "LOW" {
-		fields["low"] = true
+		fields["low_battery"] = true
 	}
 	pt, err := client.NewPoint("sensor", msg.ToLabels(), fields, time.Now())
 	if err != nil {
