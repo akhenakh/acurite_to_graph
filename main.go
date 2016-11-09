@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"os"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/influxdata/influxdb/client/v2"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -27,6 +27,8 @@ var (
 	influxPassword = flag.String("influxPassword", "", "influxDB Password")
 	influxURL      = flag.String("influxURL", "", "influxDB URL, disabled if empty")
 	influxDatabase = flag.String("influxDatabase", "", "influx Database name")
+
+	indexTpl = template.New("index")
 
 	temperature = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "sensoracurite_temperature_celsius",
@@ -48,11 +50,70 @@ var (
 	},
 		labels,
 	)
+
+	indexHTML = `<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
+	<title>Bootstrap 101 Template</title>
+
+	<!-- Bootstrap -->
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u"
+		crossorigin="anonymous">
+	<!-- Optional theme -->
+	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp"
+		crossorigin="anonymous">
+
+</head>
+
+<body>
+
+<div class="list-group">
+
+  <a href="#" class="list-group-item">
+    <h1 class="list-group-item-heading">18°C 56%</h1>
+    <p class="list-group-item-text"> <h3>Livingroom</h3></p>
+  </a>
+
+  <a href="#" class="list-group-item">
+    <h1 class="list-group-item-heading">19°C 66%</h1>
+    <p class="list-group-item-text"> <h3>Kitchen</h3></p>
+  </a>
+
+  <a href="#" class="list-group-item">
+    <h1 class="list-group-item-heading">4°C 63%</h1>
+    <p class="list-group-item-text"> <h3>Outside</h3></p>
+  </a>
+
+</div>
+
+
+</body>
+
+</html>`
 )
 
 func init() {
 	prometheus.MustRegister(temperature)
 	prometheus.MustRegister(humidity)
+}
+
+func pageHandler(w http.ResponseWriter, r *http.Request) {
+	t := template.New("index.html")
+	t, err := t.Parse(indexHTML)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	var sensors []map[string]interface{}
+
+	m := temperature.MetricVec.WithLabelValues(labels...)
+	fmt.Println(m.Desc())
+	t.Execute(w, sensors)
 }
 
 func main() {
@@ -113,7 +174,7 @@ func main() {
 	})
 
 	go func() {
-		http.Handle("/metrics", promhttp.Handler())
+		http.HandleFunc("/", pageHandler)
 		err = http.ListenAndServe(fmt.Sprintf(":%d", *httpPort), nil)
 		log.Println(err)
 	}()
@@ -131,11 +192,7 @@ func main() {
 		// Set values on prometheus gauges
 		temperature.With(prometheus.Labels(msg.ToLabels())).Set(msg.TempCelsius)
 		humidity.With(prometheus.Labels(msg.ToLabels())).Set(msg.Humidity)
-		low := 0.0
-		if msg.Battery == "LOW" {
-			low = 1.0
-		}
-		lowBattery.With(prometheus.Labels(msg.ToLabels())).Set(low)
+		lowBattery.With(prometheus.Labels(msg.ToLabels())).Set(float64(msg.LowBattery))
 
 		if influxClient != nil {
 			bp.AddPoint(msg.ToInfluxPoint())
@@ -150,8 +207,4 @@ func main() {
 	if err := in.Err(); err != nil {
 		log.Printf("error: %s", err)
 	}
-
-	http.Handle("/metrics", promhttp.Handler())
-	err = http.ListenAndServe(fmt.Sprintf(":%d", *httpPort), nil)
-	log.Println(err)
 }
