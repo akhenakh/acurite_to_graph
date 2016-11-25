@@ -76,22 +76,12 @@ var (
 <body>
 
 <div class="list-group">
-
+  {{ range .Metrics }}
   <a href="#" class="list-group-item">
-    <h1 class="list-group-item-heading">18°C 56%</h1>
-    <p class="list-group-item-text"> <h3>Livingroom</h3></p>
+    <h1 class="list-group-item-heading">{{ .Temperature }}°C {{ .Humidity }}%</h1>
+    <p class="list-group-item-text"><h3>{{ .Name }} {{ .Channel }} </h3></p>
   </a>
-
-  <a href="#" class="list-group-item">
-    <h1 class="list-group-item-heading">19°C 66%</h1>
-    <p class="list-group-item-text"> <h3>Kitchen</h3></p>
-  </a>
-
-  <a href="#" class="list-group-item">
-    <h1 class="list-group-item-heading">4°C 63%</h1>
-    <p class="list-group-item-text"> <h3>Outside</h3></p>
-  </a>
-
+  {{ end }}
 </div>
 
 
@@ -105,18 +95,96 @@ func init() {
 	prometheus.MustRegister(humidity)
 }
 
+type TplMetric struct {
+	Name        string
+	Temperature float64
+	Channel     string
+	Humidity    float64
+}
+
+type TplMetrics struct {
+	Metrics []*TplMetric
+}
+
 func pageHandler(w http.ResponseWriter, r *http.Request) {
-	t := template.New("index.html")
-	t, err := t.Parse(indexHTML)
+	mm := make(map[string]*TplMetric)
+
+	mfs, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "No metrics gathered, last error:\n\n"+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, mf := range mfs {
+		if mf.GetName() == "sensoracurite_temperature_celsius" {
+			for _, m := range mf.GetMetric() {
+				lbls := m.GetLabel()
+				var name string
+				var id string
+				var channel string
+				for _, lbl := range lbls {
+					if *lbl.Name == "name" {
+						name = *lbl.Value
+					}
+					if *lbl.Name == "id" {
+						id = *lbl.Value
+					}
+					if *lbl.Name == "channel" {
+						channel = *lbl.Value
+					}
+				}
+				if name == "" {
+					name = id
+				}
+				if _, ok := mm["name"]; !ok {
+					mm[name] = &TplMetric{}
+				}
+				mm[name].Name = name
+				mm[name].Temperature = m.Gauge.GetValue()
+				mm[name].Channel = channel
+			}
+		}
+		if mf.GetName() == "sensoracurite_humidity" {
+			for _, m := range mf.GetMetric() {
+				lbls := m.GetLabel()
+				var name string
+				var id string
+				for _, lbl := range lbls {
+					if *lbl.Name == "name" {
+						name = *lbl.Value
+					}
+					if *lbl.Name == "id" {
+						id = *lbl.Value
+					}
+				}
+				if name == "" {
+					name = id
+				}
+
+				if _, ok := mm["name"]; !ok {
+					mm[name] = &TplMetric{}
+				}
+				mm[name].Humidity = m.Gauge.GetValue()
+				log.Println("HUMI set", name, m.Gauge.GetValue())
+			}
+		}
 	}
 
-	var sensors []map[string]interface{}
+	t := template.New("index.html")
+	t, err = t.Parse(indexHTML)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Println(err)
+		return
+	}
 
-	m := temperature.MetricVec.WithLabelValues(labels...)
-	fmt.Println(m.Desc())
-	t.Execute(w, sensors)
+	sensors := make([]*TplMetric, len(mm))
+	i := 0
+	for _, v := range mm {
+		sensors[i] = v
+		i++
+	}
+
+	t.Execute(w, &TplMetrics{Metrics: sensors})
 }
 
 func main() {
@@ -182,14 +250,13 @@ func main() {
 	// read command's stdout line by line
 	in := bufio.NewScanner(stdout)
 
-	var msg DeviceMessage
-
 	bp, _ := client.NewBatchPoints(client.BatchPointsConfig{
 		Database:  *influxDatabase,
 		Precision: "s",
 	})
 
 	for in.Scan() {
+		var msg DeviceMessage
 		if err := json.Unmarshal([]byte(in.Text()), &msg); err != nil {
 			log.Println(err)
 			continue
@@ -205,7 +272,6 @@ func main() {
 				continue
 			}
 		}
-
 		// Set values on prometheus gauges
 		temperature.With(prometheus.Labels(msg.ToLabels())).Set(msg.TempCelsius)
 		humidity.With(prometheus.Labels(msg.ToLabels())).Set(msg.Humidity)
