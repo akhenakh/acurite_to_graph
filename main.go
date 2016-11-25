@@ -15,6 +15,7 @@ import (
 
 	"github.com/influxdata/influxdb/client/v2"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -22,6 +23,8 @@ var (
 	protocol = flag.String("protocol", "39", "Protocol to enable")
 	cmdPath  = flag.String("cmdPath", "rtl_433", "full path for rtl_433")
 	debug    = flag.Bool("debug", false, "set debug")
+
+	namedOnly = flag.Bool("namedOnly", false, "Only insert named sensors. See named nameFields")
 
 	influxUsername = flag.String("influxUsername", "", "influxDB Username")
 	influxPassword = flag.String("influxPassword", "", "influxDB Password")
@@ -141,6 +144,19 @@ func main() {
 		nameFields[deviceID] = split[1]
 	}
 
+	if *namedOnly && len(nameFields) == 0 {
+		fmt.Println("namedOnly is filtering all the sensors")
+		flag.PrintDefaults()
+		os.Exit(2)
+	}
+
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		http.HandleFunc("/", pageHandler)
+		err := http.ListenAndServe(fmt.Sprintf(":%d", *httpPort), nil)
+		log.Println(err)
+	}()
+
 	var influxClient client.Client
 	if *influxURL != "" {
 		var err error
@@ -173,12 +189,6 @@ func main() {
 		Precision: "s",
 	})
 
-	go func() {
-		http.HandleFunc("/", pageHandler)
-		err = http.ListenAndServe(fmt.Sprintf(":%d", *httpPort), nil)
-		log.Println(err)
-	}()
-
 	for in.Scan() {
 		if err := json.Unmarshal([]byte(in.Text()), &msg); err != nil {
 			log.Println(err)
@@ -187,6 +197,13 @@ func main() {
 		// add names labels
 		if name, ok := nameFields[int64(msg.ID)]; ok {
 			msg.Name = name
+		} else {
+			if *namedOnly {
+				if *debug {
+					log.Println("Skipped sensors because of namedOnly", msg.ID)
+				}
+				continue
+			}
 		}
 
 		// Set values on prometheus gauges
@@ -207,4 +224,5 @@ func main() {
 	if err := in.Err(); err != nil {
 		log.Printf("error: %s", err)
 	}
+
 }

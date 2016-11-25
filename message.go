@@ -40,7 +40,8 @@ func (msg *DeviceMessage) ToInfluxPoint() *client.Point {
 	if msg.LowBattery == 1 {
 		fields["low_battery"] = true
 	}
-	pt, err := client.NewPoint("sensor", msg.ToLabels(), fields, time.Now())
+	// Since we have 3 duplicate points for the same metric we truncate to 1 second for Influx to insert only one point
+	pt, err := client.NewPoint("sensor", msg.ToLabels(), fields, time.Now().Truncate(1*time.Second))
 	if err != nil {
 		log.Println(err)
 		return nil
