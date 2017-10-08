@@ -13,3 +13,5 @@ acurite_to_graph -nameFields 8831=bedroom,15466=livingroom -debug
 2016/10/27 17:45:41 {Acurite tower sensor 8831 B 17.1 54 OK bedroom}
 ```
 So it will be passed to Prometheus & InfluxDB
+
+Here is a [blogpost](http://blog.nobugware.com/post/2017/Hacking_temperature_radio_sensors_and_graphing_with_prometheus/) about it.
