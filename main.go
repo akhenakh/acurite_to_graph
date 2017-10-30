@@ -130,7 +130,7 @@ func pageHandler(w http.ResponseWriter, r *http.Request) {
 				if name == "" {
 					name = id
 				}
-				if _, ok := mm["name"]; !ok {
+				if _, ok := mm[name]; !ok {
 					mm[name] = &TplMetric{}
 				}
 				mm[name].Name = name
@@ -138,6 +138,7 @@ func pageHandler(w http.ResponseWriter, r *http.Request) {
 				mm[name].Channel = channel
 			}
 		}
+
 		if mf.GetName() == "sensoracurite_humidity" {
 			for _, m := range mf.GetMetric() {
 				lbls := m.GetLabel()
@@ -155,13 +156,10 @@ func pageHandler(w http.ResponseWriter, r *http.Request) {
 					name = id
 				}
 
-				if _, ok := mm["name"]; !ok {
+				if _, ok := mm[name]; !ok {
 					mm[name] = &TplMetric{}
 				}
 				mm[name].Humidity = m.Gauge.GetValue()
-				if *debug {
-					log.Println("HUMI set", name, m.Gauge.GetValue())
-				}
 			}
 		}
 	}
