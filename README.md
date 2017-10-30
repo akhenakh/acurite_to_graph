@@ -15,6 +15,6 @@ acurite_to_graph -nameFields 8831=bedroom,15466=livingroom -debug
 
 A mini website with your live temperatures is also accessible at http://localhost:44010 
 
-![example webpage](https://raw.githubusercontent.com/akhenakh/acurite_to_grap/master/web.png)
+![example webpage](https://raw.githubusercontent.com/akhenakh/acurite_to_graph/master/web.png)
 
 Here is a [blogpost](http://blog.nobugware.com/post/2017/Hacking_temperature_radio_sensors_and_graphing_with_prometheus/) about it.
