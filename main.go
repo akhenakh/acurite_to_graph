@@ -10,10 +10,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/influxdata/influxdb/client/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -25,11 +25,6 @@ var (
 	debug    = flag.Bool("debug", false, "set debug")
 
 	namedOnly = flag.Bool("namedOnly", false, "Only insert named sensors. See named nameFields")
-
-	influxUsername = flag.String("influxUsername", "", "influxDB Username")
-	influxPassword = flag.String("influxPassword", "", "influxDB Password")
-	influxURL      = flag.String("influxURL", "", "influxDB URL, disabled if empty")
-	influxDatabase = flag.String("influxDatabase", "", "influx Database name")
 
 	indexTpl = template.New("index")
 
@@ -62,7 +57,7 @@ var (
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
-	<title>Bootstrap 101 Template</title>
+	<title>Temperature sensors</title>
 
 	<!-- Bootstrap -->
 	<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u"
@@ -164,7 +159,9 @@ func pageHandler(w http.ResponseWriter, r *http.Request) {
 					mm[name] = &TplMetric{}
 				}
 				mm[name].Humidity = m.Gauge.GetValue()
-				log.Println("HUMI set", name, m.Gauge.GetValue())
+				if *debug {
+					log.Println("HUMI set", name, m.Gauge.GetValue())
+				}
 			}
 		}
 	}
@@ -183,6 +180,9 @@ func pageHandler(w http.ResponseWriter, r *http.Request) {
 		sensors[i] = v
 		i++
 	}
+
+	// sort by location name
+	sort.SliceStable(sensors, func(i, j int) bool { return sensors[i].Name < sensors[j].Name })
 
 	t.Execute(w, &TplMetrics{Metrics: sensors})
 }
@@ -225,20 +225,6 @@ func main() {
 		log.Println(err)
 	}()
 
-	var influxClient client.Client
-	if *influxURL != "" {
-		var err error
-		influxClient, err = client.NewHTTPClient(client.HTTPConfig{
-			Addr:     *influxURL,
-			Username: *influxUsername,
-			Password: *influxPassword,
-		})
-
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-
 	cmd := exec.Command(*cmdPath, "-R", *protocol, "-F", "json", "-q")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -249,11 +235,6 @@ func main() {
 	}
 	// read command's stdout line by line
 	in := bufio.NewScanner(stdout)
-
-	bp, _ := client.NewBatchPoints(client.BatchPointsConfig{
-		Database:  *influxDatabase,
-		Precision: "s",
-	})
 
 	for in.Scan() {
 		var msg DeviceMessage
@@ -277,12 +258,6 @@ func main() {
 		humidity.With(prometheus.Labels(msg.ToLabels())).Set(msg.Humidity)
 		lowBattery.With(prometheus.Labels(msg.ToLabels())).Set(float64(msg.LowBattery))
 
-		if influxClient != nil {
-			bp.AddPoint(msg.ToInfluxPoint())
-			if err := influxClient.Write(bp); err != nil {
-				log.Println(err)
-			}
-		}
 		if *debug {
 			log.Println(msg)
 		}
