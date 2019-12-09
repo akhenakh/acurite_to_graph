@@ -20,7 +20,7 @@ import (
 
 var (
 	httpPort = flag.Int("httpPort", 44010, "http port to listen on")
-	protocol = flag.String("protocol", "39", "Protocol to enable")
+	protocol = flag.String("protocol", "40", "Protocol to enable")
 	cmdPath  = flag.String("cmdPath", "rtl_433", "full path for rtl_433")
 	debug    = flag.Bool("debug", false, "set debug")
 
