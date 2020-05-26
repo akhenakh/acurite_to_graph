@@ -7,12 +7,16 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -216,6 +220,16 @@ func main() {
 		os.Exit(2)
 	}
 
+	exit := make(chan bool, 1)
+
+	sigs := make(chan os.Signal, 2)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		sig := <-sigs
+		fmt.Println(sig)
+		exit <- true
+	}()
+
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
 		http.HandleFunc("/", pageHandler)
@@ -233,6 +247,35 @@ func main() {
 	}
 	// read command's stdout line by line
 	in := bufio.NewScanner(stdout)
+
+	devicec := make(chan DeviceMessage, 2)
+
+	// expire old device
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		m := make(map[DeviceMessage]time.Time)
+		for {
+			select {
+			case <-ticker.C:
+				for msg, t := range m {
+					if t.Add(2 * time.Minute).Before(time.Now()) {
+						if *debug {
+							log.Println("expired device", msg.ID)
+						}
+						temperature.With(prometheus.Labels(msg.ToLabels())).Set(math.NaN())
+						humidity.With(prometheus.Labels(msg.ToLabels())).Set(math.NaN())
+						lowBattery.With(prometheus.Labels(msg.ToLabels())).Set(math.NaN())
+						delete(m, msg)
+					}
+				}
+			case device := <-devicec:
+				m[device] = time.Now()
+			case <-exit:
+				ticker.Stop()
+				return
+			}
+		}
+	}()
 
 	for in.Scan() {
 		var msg DeviceMessage
@@ -255,6 +298,8 @@ func main() {
 		temperature.With(prometheus.Labels(msg.ToLabels())).Set(msg.TempCelsius)
 		humidity.With(prometheus.Labels(msg.ToLabels())).Set(msg.Humidity)
 		lowBattery.With(prometheus.Labels(msg.ToLabels())).Set(float64(msg.LowBattery))
+
+		devicec <- msg
 
 		if *debug {
 			log.Println(msg)
