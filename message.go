@@ -2,6 +2,7 @@ package main
 
 import (
 	"strconv"
+	"time"
 )
 
 var (
@@ -9,13 +10,14 @@ var (
 )
 
 type DeviceMessage struct {
-	Model       string
-	ID          int
-	Channel     string
-	TempCelsius float64 `json:"temperature_C"`
-	Humidity    float64
-	LowBattery  int
-	Name        string
+	Model        string
+	ID           int
+	Channel      string
+	TempCelsius  float64 `json:"temperature_C"`
+	Humidity     float64
+	LowBattery   int
+	Name         string
+	ReceivedTime time.Time
 }
 
 func (msg *DeviceMessage) ToLabels() map[string]string {

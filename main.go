@@ -253,23 +253,23 @@ func main() {
 	// expire old device
 	go func() {
 		ticker := time.NewTicker(1 * time.Minute)
-		m := make(map[DeviceMessage]time.Time)
+		m := make(map[int]DeviceMessage)
 		for {
 			select {
 			case <-ticker.C:
-				for msg, t := range m {
-					if t.Add(2 * time.Minute).Before(time.Now()) {
+				for id, msg := range m {
+					if msg.ReceivedTime.Add(2 * time.Minute).Before(time.Now()) {
 						if *debug {
 							log.Println("expired device", msg.ID)
 						}
 						temperature.With(prometheus.Labels(msg.ToLabels())).Set(math.NaN())
 						humidity.With(prometheus.Labels(msg.ToLabels())).Set(math.NaN())
 						lowBattery.With(prometheus.Labels(msg.ToLabels())).Set(math.NaN())
-						delete(m, msg)
+						delete(m, id)
 					}
 				}
 			case device := <-devicec:
-				m[device] = time.Now()
+				m[device.ID] = device
 			case <-exit:
 				ticker.Stop()
 				return
@@ -298,6 +298,7 @@ func main() {
 		temperature.With(prometheus.Labels(msg.ToLabels())).Set(msg.TempCelsius)
 		humidity.With(prometheus.Labels(msg.ToLabels())).Set(msg.Humidity)
 		lowBattery.With(prometheus.Labels(msg.ToLabels())).Set(float64(msg.LowBattery))
+		msg.ReceivedTime = time.Now()
 
 		devicec <- msg
 
